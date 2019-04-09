@@ -6,16 +6,14 @@ from src.averaging_round_manager import AveragingRoundManager
 from src.comet_logger import CometLogger
 from src.settings import EXPERIMENTS_PATH
 
-def run(max_frames=500, num_rounds=10, seed=3, gravities=(10.)):
+def run(max_frames=500, num_rounds=3, seed=3, gravities=(10.)):
     params = DDPGRound.defaults()
     params['algo'] = 'DDPG'
     params['env'] = 'GravityPendulum-v0'
     params['seed'] = seed
     params['max_frames'] = max_frames
-    params['g'] = 10
     params['gravities'] = gravities
-    params['project'] = 'ddpg-fl-averaging'
-
+    params['project'] = 'ddpg-fl-kl'
     node_params = [ChainMap({'id':f'n{idx}', 'g': g }, params) for idx,g in enumerate(gravities) ]
 
     experiment = CometLogger(project=params['project']).experiment()
@@ -25,8 +23,8 @@ def run(max_frames=500, num_rounds=10, seed=3, gravities=(10.)):
         'experiment_path': EXPERIMENTS_PATH / experiment.id,
         'shared_replay': False,
         'multiprocess': True,
-        'kl': 0.,
-        'ce': 0.,
+        'kl': 0.5,
+        'ce': 0.5,
     }
     experiment.log_parameters(params)
     experiment.log_parameters(experiment_params)

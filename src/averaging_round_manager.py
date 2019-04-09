@@ -25,13 +25,27 @@ import threading
 class AveragingRoundManager:
     def __init__(self, node_params=[], experiment_params={}):
         self.nodes = [ DDPGRound(param) for param in node_params ]
+
         self.num_nodes = len(self.nodes)
         self.experiment = experiment_params['experiment']
+
         self.num_rounds = experiment_params['num_rounds']
         self.multiprocess= experiment_params['multiprocess']
         self.shared_replay = experiment_params['shared_replay']
         self.experiment_path = experiment_params['experiment_path']
+        self.kl = experiment_params['kl']
+        self.ce = experiment_params['ce']
         os.makedirs(self.experiment_path, exist_ok=True)
+
+
+    def primary_node(self):
+        return self.nodes[0]
+
+    def primary_policy_net(self):
+        return self.primary_node().policy_net
+
+    def primary_value_net(self):
+        return self.primary_node().value_net
 
 
     def init_value_and_policy_params(self):
@@ -71,6 +85,7 @@ class AveragingRoundManager:
         return value_params, policy_params
 
 
+
     def run_rounds(self):
 
         trailing_avg = {}
@@ -79,29 +94,26 @@ class AveragingRoundManager:
 
 
         for idx in range(self.num_rounds):
-            value_params, policy_params = self.init_value_and_policy_params()
             round_num = idx + 1
             print(f'Round {round_num}')
-            if self.multiprocess:
-                pool = multiprocessing.Pool(multiprocessing.cpu_count() - 1)
-                results =  pool.starmap(job, [(node,) for node in self.nodes])
-                round_reward = []
-                for result in results:
-                    node_idx = next(idx for idx, node in enumerate(self.nodes) if node.id == result['id'])
-                    id = result['id']
-                    self.nodes[node_idx].value_net.load_state_dict(result['value_net'])
-                    self.nodes[node_idx].policy_net.load_state_dict(result['policy_net'])
-                    self.nodes[node_idx].total_frames = result['total_frames']
-                    round_reward.append(result['rewards'])
-                    trailing_avg[id].append(result['rewards'][-1])
+            pool = multiprocessing.Pool(multiprocessing.cpu_count() - 1)
+            results =  pool.starmap(job, [(node,) for node in self.nodes])
+            value_params, policy_params = self.init_value_and_policy_params()
+            round_reward = []
+            for result in results:
+                node_idx = next(idx for idx, node in enumerate(self.nodes) if node.id == result['id'])
+                id = result['id']
+                self.nodes[node_idx].value_net.load_state_dict(result['value_net'])
+                self.nodes[node_idx].policy_net.load_state_dict(result['policy_net'])
+                self.nodes[node_idx].total_frames = result['total_frames']
+                round_reward.append(result['rewards'])
+                # TODO: do we want to take the average of all rewards for that
+                # round?
+                trailing_avg[id].append(result['rewards'][-1])
 
 
-                    self.experiment.log_metric(f'reward.{id}', result['rewards'][-1], step=result['total_frames'])
-                    self.experiment.log_metric(f'trailing_avg_5.{id}', np.mean(trailing_avg[id][-5]),step=result['total_frames'])
-
-            else:
-                for node in self.nodes:
-                    node.run()
+                self.experiment.log_metric(f'reward.{id}', result['rewards'][-1], step=result['total_frames'])
+                self.experiment.log_metric(f'trailing_avg_5.{id}', np.mean(trailing_avg[id][-5]),step=result['total_frames'])
 
             # all replay memory
             if self.shared_replay:
@@ -109,6 +121,8 @@ class AveragingRoundManager:
                     node_idx = next(idx for idx, node in enumerate(self.nodes) if node.id == result['id'])
                     for idx, node in enumerate(self.nodes):
                         for frame in result['replay_buffer_buffer']:
+                            # TODO: double check that this is doing what I think it's
+                            # doing
                             self.nodes[idx].replay_buffer.push(*frame)
             else:
                 # just my replay memory

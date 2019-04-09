@@ -36,14 +36,6 @@ class DDPGRound():
     def __init__(self, params):
         params = dict(params)
         self.g = params['g']
-        def env_factory():
-            return GravityPendulum(self.g)
-        gym_register(id='GravityPendulum-v0',entry_point=env_factory, max_episode_steps=200,)
-        env = gym.make("GravityPendulum-v0")
-
-        self.env = NormalizedActions(env)
-
-
         self.device = params['device']
         self.max_frames  = params['max_frames']
         self.max_steps   = params['max_steps']
@@ -51,13 +43,13 @@ class DDPGRound():
         self.on_round_done = params['on_round_done']
         self.id = params['id']
         self.total_frames = 0
+        self.seed = params['seed']
 
+        # normally taken from the env, but since we're adjusting
+        # environments after construction, it's easier to hard-code for now
+        state_dim = 3
+        action_dim = 1
 
-        self.set_seed(params['seed'])
-        self.ou_noise = OUNoise(self.env.action_space)
-
-        state_dim  = self.env.observation_space.shape[0]
-        action_dim = self.env.action_space.shape[0]
         hidden_dim = 256
 
         self.value_net  = ValueNetwork(state_dim, action_dim, hidden_dim).to(self.device)
@@ -72,8 +64,6 @@ class DDPGRound():
         for target_param, param in zip(self.target_policy_net.parameters(), self.policy_net.parameters()):
             target_param.data.copy_(param.data)
 
-
-
         value_lr  = 1e-3
         policy_lr = 1e-4
         self.value_optimizer  = optim.Adam(self.value_net.parameters(),  lr=value_lr)
@@ -85,6 +75,18 @@ class DDPGRound():
         self.replay_buffer = ReplayBuffer(replay_buffer_size)
 
 
+
+    def env_factory(self):
+        return GravityPendulum(self.g)
+
+    def setup(self):
+        env_name = f'GravityPendulum-{self.id}-v0'
+        gym_register(id=env_name,entry_point=self.env_factory, max_episode_steps=200,)
+        env = gym.make(env_name)
+        self.env = NormalizedActions(env)
+        self.set_seed(self.seed)
+        self.ou_noise = OUNoise(self.env.action_space)
+
     def set_seed(self, seed):
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -92,7 +94,6 @@ class DDPGRound():
         torch.cuda.manual_seed(seed)
         random.seed(seed)
         torch.backends.cudnn.deterministic = True
-
 
 
     def ddpg_update(self, batch_size,
@@ -146,6 +147,7 @@ class DDPGRound():
 
 
     def run(self):
+        self.setup()
         rewards = []
         frame_idx= 0
         self.env.g = self.g
