@@ -33,13 +33,15 @@ class AveragingRoundManager:
         self.multiprocess= experiment_params['multiprocess']
         self.shared_replay = experiment_params['shared_replay']
         self.experiment_path = experiment_params['experiment_path']
-        self.kl = experiment_params['kl']
-        self.ce = experiment_params['ce']
+        self.alpha = experiment_params['alpha']
+        self.beta = experiment_params['beta']
         os.makedirs(self.experiment_path, exist_ok=True)
-
 
     def primary_node(self):
         return self.nodes[0]
+
+    def primary_id(self):
+        return self.primary_node().id
 
     def primary_policy_net(self):
         return self.primary_node().policy_net
@@ -47,6 +49,16 @@ class AveragingRoundManager:
     def primary_value_net(self):
         return self.primary_node().value_net
 
+    def params_from_node(self, node):
+        policy_params = dict()
+        value_params = dict()
+        for name, tensor in node.value_net.named_parameters():
+            value_params[name] = tensor
+
+        for name, tensor in node.policy_net.named_parameters():
+            policy_params[name] = tensor
+
+        return value_params, policy_params
 
     def init_value_and_policy_params(self):
         policy_params = dict()
@@ -84,8 +96,6 @@ class AveragingRoundManager:
 
         return value_params, policy_params
 
-
-
     def run_rounds(self):
 
         trailing_avg = {}
@@ -96,7 +106,7 @@ class AveragingRoundManager:
         for idx in range(self.num_rounds):
             round_num = idx + 1
             print(f'Round {round_num}')
-            pool = multiprocessing.Pool(multiprocessing.cpu_count() - 1)
+            pool = multiprocessing.Pool(len(self.nodes))
             results =  pool.starmap(job, [(node,) for node in self.nodes])
             value_params, policy_params = self.init_value_and_policy_params()
             round_reward = []
@@ -137,13 +147,36 @@ class AveragingRoundManager:
             self.experiment.log_metric(f'round_reward_std', np.std(round_reward), step=round_num)
             value_params, policy_params = self.average_node_network_weights(value_params, policy_params)
 
+            # first we load the primary policy
+            self.primary_policy_net().load_state_dict(policy_params)
+            self.primary_value_net().load_state_dict(value_params)
+            primary_policy_params = policy_params
+            primary_value_params = value_params
+
             for node in self.nodes:
+                if node.id == self.primary_id():
+                    continue
+
+                # what is the distance in hparams?
+                differential = np.abs(self.primary_node().g - node.g)
+                node_value, node_policy = self.params_from_node(node)
+
+                for key, param in node_policy.items():
+                    if self.beta == 0. or self.alpha == 0.:
+                        reg_a = 0
+                        reg_b = 0
+                    else:
+                        reg_a = ( self.alpha / self.beta ) * np.log(torch.clamp(primary_policy_params[key].detach(), 0.01, 5_000_000).numpy())
+                        reg_b = ( 1 / self.beta ) * np.log(torch.clamp(node_policy[key].detach(), 0.01, 5_000_000).numpy())
+
+                    node_policy[key] = node_policy[key].detach() + torch.tensor(reg_a) - torch.tensor(reg_b)
+
                 node.policy_net.load_state_dict(policy_params)
                 node.value_net.load_state_dict(value_params)
 
         # At this point all networks are the same, let's pick one and save it:
-        self.save_model(self.nodes[0].value_net, self.experiment_path / 'value_net.mdl')
-        self.save_model(self.nodes[0].policy_net, self.experiment_path / 'policy_net.mdl')
+        self.save_model(self.primary_node().value_net, self.experiment_path / 'value_net.mdl')
+        self.save_model(self.primary_node().policy_net, self.experiment_path / 'policy_net.mdl')
 
         return value_params, policy_params
 

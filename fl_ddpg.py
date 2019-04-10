@@ -25,8 +25,8 @@ def run(max_frames=500, num_rounds=10, seed=3, gravities=(10.)):
         'experiment_path': EXPERIMENTS_PATH / experiment.id,
         'shared_replay': False,
         'multiprocess': True,
-        'kl': 0.,
-        'ce': 0.,
+        'alpha': 0.,
+        'beta': 0.,
     }
     experiment.log_parameters(params)
     experiment.log_parameters(experiment_params)
