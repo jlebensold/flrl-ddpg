@@ -6,10 +6,9 @@ from src.averaging_round_manager import AveragingRoundManager
 from src.comet_logger import CometLogger
 from src.settings import EXPERIMENTS_PATH
 
-def run(max_frames=800, alpha=0.5, beta=0.5, num_rounds=12, seed=3, gravities=(10.)):
+def run(max_frames=800, env='GravityPendulum', alpha=0.5, beta=0.5, num_rounds=12, seed=3, gravities=(10.)):
     params = DDPGRound.defaults()
-    params['algo'] = 'DDPG'
-    params['env'] = 'GravityPendulum-v0'
+    params['env'] = env
     params['seed'] = seed
     params['max_frames'] = max_frames
     params['gravities'] = gravities

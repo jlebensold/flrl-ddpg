@@ -11,7 +11,7 @@ from src.settings import EXPERIMENTS_PATH
 import torch
 
 
-def run(source_experiment, max_frames=5000, g=10, seed=3):
+def run(tag, source_experiment, max_frames=5000, g=10, seed=3):
     params = DDPGRound.defaults()
     params['source_experiment'] = source_experiment
     params['project'] = 'transfer'
@@ -22,6 +22,7 @@ def run(source_experiment, max_frames=5000, g=10, seed=3):
     params['g'] = g
     experiment = CometLogger(project=params['project']).experiment()
     experiment.log_parameters(params)
+    experiment.add_tag(tag)
 
     trailing_avg = (np.zeros(5) - 1500).tolist() # prime the list for averaging
 

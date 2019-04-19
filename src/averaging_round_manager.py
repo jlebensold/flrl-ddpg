@@ -117,12 +117,14 @@ class AveragingRoundManager:
                 self.nodes[node_idx].policy_net.load_state_dict(result['policy_net'])
                 self.nodes[node_idx].total_frames = result['total_frames']
                 round_reward.append(result['rewards'])
-                # TODO: do we want to take the average of all rewards for that
-                # round?
-                trailing_avg[id].append(result['rewards'][-1])
+                # Take the last reward from the round and assume this is
+                # avereage performance:
+                trailing_avg[id].append(np.mean(result['rewards']))
+                for (step, eps_reward) in result['episode_rewards']:
+                    self.experiment.log_metric(f'reward.{id}', eps_reward, step=step)
 
 
-                self.experiment.log_metric(f'reward.{id}', result['rewards'][-1], step=result['total_frames'])
+                self.experiment.log_metric(f'round_avg.{id}', np.mean(result['rewards']), step=result['total_frames'])
                 self.experiment.log_metric(f'trailing_avg_5.{id}', np.mean(trailing_avg[id][-5]),step=result['total_frames'])
 
             # all replay memory
@@ -141,10 +143,8 @@ class AveragingRoundManager:
                     self.nodes[node_idx].replay_buffer.buffer = result['replay_buffer_buffer']
                     self.nodes[node_idx].replay_buffer.position = result['replay_buffer_position']
 
-
-            print("Avg reward: ", np.mean(round_reward), "var: ", np.std(round_reward) )
-            self.experiment.log_metric(f'round_reward_avg', np.mean(round_reward), step=round_num)
-            self.experiment.log_metric(f'round_reward_std', np.std(round_reward), step=round_num)
+            avg_round_reward = np.mean([np.mean(r) for r in round_reward])
+            self.experiment.log_metric(f'round_reward_avg', avg_round_reward, step=round_num)
             value_params, policy_params = self.average_node_network_weights(value_params, policy_params)
 
             # first we load the primary policy
@@ -185,10 +185,16 @@ class AveragingRoundManager:
         self.experiment.log_asset(path, overwrite=True)
 
 def job(node_round):
+    episode_rewards = list()
+    def on_episode_done(id, step, reward):
+        episode_rewards.append((step,reward))
+
+    node_round.on_episode_done = on_episode_done
     rewards, total_frames = node_round.run()
     return {
             'id': node_round.id,
             'rewards': rewards,
+            'episode_rewards': episode_rewards,
             'total_frames': total_frames,
             'value_net': node_round.value_net.state_dict(),
             'policy_net': node_round.policy_net.state_dict(),
