@@ -17,6 +17,7 @@ def run(max_frames=800, env='GravityPendulum', alpha=0.5, beta=0.5, num_rounds=1
 
     experiment = CometLogger(project=params['project']).experiment()
     experiment_params = {
+        'algo': params['algo'],
         'experiment': experiment,
         'num_rounds': num_rounds,
         'experiment_path': EXPERIMENTS_PATH / experiment.id,

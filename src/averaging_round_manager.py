@@ -11,8 +11,8 @@ from collections import ChainMap
 
 from src.replay_buffer import ReplayBuffer
 from src.ou_noise import OUNoise
-from src.networks import PolicyNetwork, ValueNetwork
 from src.ddpg_round import DDPGRound
+from src.dqn_round import DQNRound
 from gym.envs.registration import register as gym_register
 
 
@@ -24,7 +24,11 @@ import threading
 
 class AveragingRoundManager:
     def __init__(self, node_params=[], experiment_params={}):
-        self.nodes = [ DDPGRound(param) for param in node_params ]
+
+        if experiment_params['algo'] == 'DDPG':
+            self.nodes = [ DDPGRound(param) for param in node_params ]
+        if experiment_params['algo'] == 'DQN':
+            self.nodes = [ DQNRound(param) for param in node_params ]
 
         self.num_nodes = len(self.nodes)
         self.experiment = experiment_params['experiment']
@@ -36,6 +40,7 @@ class AveragingRoundManager:
         self.alpha = experiment_params['alpha']
         self.beta = experiment_params['beta']
         os.makedirs(self.experiment_path, exist_ok=True)
+        self.multiprocess = False
 
     def primary_node(self):
         return self.nodes[0]
@@ -46,55 +51,44 @@ class AveragingRoundManager:
     def primary_policy_net(self):
         return self.primary_node().policy_net
 
-    def primary_value_net(self):
-        return self.primary_node().value_net
+#    def primary_value_net(self):
+#        return self.primary_node().value_net
 
     def params_from_node(self, node):
         policy_params = dict()
-        value_params = dict()
-        for name, tensor in node.value_net.named_parameters():
-            value_params[name] = tensor
+#        value_params = dict()
+#        for name, tensor in node.value_net.named_parameters():
+#            value_params[name] = tensor
 
         for name, tensor in node.policy_net.named_parameters():
             policy_params[name] = tensor
 
-        return value_params, policy_params
+        return policy_params
 
     def init_value_and_policy_params(self):
         policy_params = dict()
-        value_params = dict()
-
-        for name, param in self.nodes[0].value_net.named_parameters():
-            value_params[name] = torch.zeros_like(param)
-
-        for name, param in self.nodes[0].policy_net.named_parameters():
+        for name, param in self.primary_policy_net().named_parameters():
             policy_params[name] = torch.zeros_like(param)
 
-        return value_params, policy_params
+        return policy_params
 
-    def add_node_weights_to_network_params(self, node, value_params, policy_params):
-
-        for name, tensor in node.value_net.named_parameters():
-            value_params[name] += tensor
-
+    def add_node_weights_to_network_params(self, node, policy_params):
         for name, tensor in node.policy_net.named_parameters():
             policy_params[name] += tensor
 
-        return value_params, policy_params
+        return policy_params
 
 
-    def average_node_network_weights(self, value_params, policy_params):
+    def average_node_network_weights(self, policy_params):
         for node in self.nodes:
-            value_params, policy_params = self.add_node_weights_to_network_params(node, value_params, policy_params)
+            policy_params = self.add_node_weights_to_network_params(node, policy_params)
 
+        print(policy_params.keys())
         # average:
-        for name, param in value_params.items():
-            value_params[name] /= self.num_nodes
-
         for name, param in policy_params.items():
             policy_params[name] /= self.num_nodes
 
-        return value_params, policy_params
+        return policy_params
 
     def run_rounds(self):
 
@@ -106,14 +100,18 @@ class AveragingRoundManager:
         for idx in range(self.num_rounds):
             round_num = idx + 1
             print(f'Round {round_num}')
-            pool = multiprocessing.Pool(len(self.nodes))
-            results =  pool.starmap(job, [(node,) for node in self.nodes])
-            value_params, policy_params = self.init_value_and_policy_params()
+
+            if self.multiprocess == True:
+                pool = multiprocessing.Pool(len(self.nodes))
+                results =  pool.starmap(job, [(node,) for node in self.nodes])
+            else:
+                results = [job(node) for node in self.nodes]
+            policy_params = self.init_value_and_policy_params()
             round_reward = []
             for result in results:
                 node_idx = next(idx for idx, node in enumerate(self.nodes) if node.id == result['id'])
                 id = result['id']
-                self.nodes[node_idx].value_net.load_state_dict(result['value_net'])
+#                self.nodes[node_idx].value_net.load_state_dict(result['value_net'])
                 self.nodes[node_idx].policy_net.load_state_dict(result['policy_net'])
                 self.nodes[node_idx].total_frames = result['total_frames']
                 round_reward.append(result['rewards'])
@@ -145,21 +143,21 @@ class AveragingRoundManager:
 
             avg_round_reward = np.mean([np.mean(r) for r in round_reward])
             self.experiment.log_metric(f'round_reward_avg', avg_round_reward, step=round_num)
-            value_params, policy_params = self.average_node_network_weights(value_params, policy_params)
+            policy_params = self.average_node_network_weights(policy_params)
 
             # first we load the primary policy
-            self.primary_policy_net().load_state_dict(policy_params)
-            self.primary_value_net().load_state_dict(value_params)
+            self.primary_policy_net().load_state_dict(policy_params, strict=False)
+#            self.primary_value_net().load_state_dict(value_params)
             primary_policy_params = policy_params
-            primary_value_params = value_params
+#            primary_value_params = value_params
 
             for node in self.nodes:
                 if node.id == self.primary_id():
                     continue
 
                 # what is the distance in hparams?
-                differential = np.abs(self.primary_node().g - node.g)
-                node_value, node_policy = self.params_from_node(node)
+                #differential = np.abs(self.primary_node().env_param - node.env_param)
+                node_policy = self.params_from_node(node)
 
                 for key, param in node_policy.items():
                     if self.beta == 0. or self.alpha == 0.:
@@ -171,11 +169,9 @@ class AveragingRoundManager:
 
                     node_policy[key] = node_policy[key].detach() + torch.tensor(reg_a) - torch.tensor(reg_b)
 
-                node.policy_net.load_state_dict(policy_params)
-                node.value_net.load_state_dict(value_params)
-
+                node.policy_net.load_state_dict(policy_params, strict=False)
         # At this point all networks are the same, let's pick one and save it:
-        self.save_model(self.primary_node().value_net, self.experiment_path / 'value_net.mdl')
+#        self.save_model(self.primary_node().value_net, self.experiment_path / 'value_net.mdl')
         self.save_model(self.primary_node().policy_net, self.experiment_path / 'policy_net.mdl')
 
         return value_params, policy_params
@@ -196,7 +192,7 @@ def job(node_round):
             'rewards': rewards,
             'episode_rewards': episode_rewards,
             'total_frames': total_frames,
-            'value_net': node_round.value_net.state_dict(),
+#            'value_net': node_round.value_net.state_dict(),
             'policy_net': node_round.policy_net.state_dict(),
             'replay_buffer_buffer': node_round.replay_buffer.buffer,
             'replay_buffer_position': node_round.replay_buffer.position,

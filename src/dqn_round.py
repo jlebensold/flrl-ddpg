@@ -12,7 +12,7 @@ import torchvision.transforms as T
 
 from .replay_memory import ReplayMemory
 from .dqn import DQN
-from .normalized_actions import NormalizedActions
+from .gravity_cartpole import GravityCartPole
 
 
 import io
@@ -27,8 +27,8 @@ from itertools import count
 from PIL import Image
 
 envs = {
-    'MountainCarDiscrete' : {
-        'env': None,
+    'GravityCartPole' : {
+        'env': GravityCartPole,
         'state_dim': 2,
         'max_steps': 300,
         'value_lr': 1e-3,
@@ -47,7 +47,8 @@ class DQNRound():
 
         return dict(
                 seed=1,
-                device=torch.device("cuda:0"),
+#                device=torch.device("cuda:0"),
+                device=torch.device("cpu"),
                 max_frames=12000,
                 algo='DQN',
                 on_episode_done=None,
@@ -61,7 +62,7 @@ class DQNRound():
         params = dict(params)
         self.env_param = params['env_param']
         self.device = params['device']
-        self.max_frames  = params['max_frames']
+        self.num_episodes = params['max_frames']
         self.on_episode_done = params['on_episode_done']
         self.id = params['id']
         self.total_frames = 0
@@ -83,24 +84,24 @@ class DQNRound():
 
         self.cur_run = 0
 
-        self.memory = ReplayMemory(Transition, 10000)
+        self.replay_buffer = ReplayMemory(Transition, 10000)
         self.steps_done = 0
         self.episode_durations = []
-        self.num_episodes = 1000
         self.episode_rewards = []
         self.running_avg = 100
         self.gamma = 0.999
 
         self.build_models()
+        self.setup()
 
     def env_factory(self):
         return envs[self.env_name]['env'](self.env_param)
 
     def setup(self):
-        #env_name = f'{self.env_name}-{self.id}-v0'
-        #gym_register(id=env_name,entry_point=self.env_factory, max_episode_steps=200,)
-        #env = gym.make('CartPole-v1').unwrapped
-        #self.env = env
+        env_name = f'{self.env_name}-{self.id}-v0'
+        gym_register(id=env_name,entry_point=self.env_factory, max_episode_steps=200,)
+        env = gym.make(env_name).unwrapped
+        self.env = env
         self.set_seed(self.seed)
 
     def set_seed(self, seed):
@@ -188,9 +189,9 @@ class DQNRound():
         """
             Run a training step
         """
-        if len(self.memory) < self.batch_size:
+        if len(self.replay_buffer) < self.batch_size:
             return
-        transitions = self.memory.sample(self.batch_size)
+        transitions = self.replay_buffer.sample(self.batch_size)
         # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
         # detailed explanation). This converts batch-array of Transitions
         # to Transition of batch-arrays.
@@ -233,7 +234,6 @@ class DQNRound():
 
 
     def run(self):
-        self.setup()
         self.optimizer = optim.RMSprop(self.policy_net.parameters())
         self.cur_run += 1
         self.env.reset()
@@ -261,8 +261,8 @@ class DQNRound():
                 else:
                     next_state = None
 
-                # Store the transition in memory
-                self.memory.push(state, action, next_state, reward)
+                # Store the transition in replay_buffer
+                self.replay_buffer.push(state, action, next_state, reward)
 
                 # Move to the next state
                 state = next_state
@@ -290,7 +290,10 @@ class DQNRound():
                 self.target_net.load_state_dict(self.policy_net.state_dict())
 
         print(f'[{self.id}-{self.cur_run}] - Complete - {np.mean(self.episode_rewards)}')
-        self.env.render()
+#        self.env.render()
+
+        return rewards, self.total_frames
+
 
     def set_models(self, params):
         self.target_net.load_state_dict(params, strict=False)
