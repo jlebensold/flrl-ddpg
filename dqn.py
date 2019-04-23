@@ -7,8 +7,7 @@ from src.averaging_round_manager import AveragingRoundManager
 from src.comet_logger import CometLogger
 from src.settings import EXPERIMENTS_PATH
 
-def run(max_episodes=1, env='GridworldEnv', fame_reg=False, distral=True,
-        alpha=0.8, beta=5, num_rounds=200, seed=3,
+def run(max_episodes=1, env='GridworldEnv', device='cpu',  fame_reg=False, distral=True, alpha=0.5, beta=5, num_rounds=150, seed=1,
         env_params=(5,4,6)):
     params = DQNRound.defaults()
     params['env'] = env
@@ -18,7 +17,6 @@ def run(max_episodes=1, env='GridworldEnv', fame_reg=False, distral=True,
     params['alpha'] = alpha
     params['beta'] = beta
     params['project'] = 'dqn-fl-kl'
-    #params['device'] = 'cuda:0'
     params['device'] = 'cpu'
     params['distral'] = distral
     node_params = [ChainMap({'id':f'n{idx}', 'env_param': ep }, params) for idx, ep in enumerate(env_params) ]
@@ -33,7 +31,7 @@ def run(max_episodes=1, env='GridworldEnv', fame_reg=False, distral=True,
         'fame_regularize': fame_reg,
         'distral': distral,
         'experiment_path': EXPERIMENTS_PATH / experiment.id,
-        'multiprocess': True,
+        'multiprocess': False,
         'alpha': float(alpha),
         'beta': float(beta),
     }

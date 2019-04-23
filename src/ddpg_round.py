@@ -56,7 +56,7 @@ class DDPGRound():
         state_dim = envs[env_name]['state_dim']
         return PolicyNetwork(state_dim, ACTION_DIM, HIDDEN_DIM)
 
-    def __init__(self, params, pi0_net):
+    def __init__(self, params):
         params = dict(params)
         self.env_param = params['env_param']
         self.device = params['device']
@@ -66,7 +66,6 @@ class DDPGRound():
         self.total_frames = 0
         self.seed = params['seed']
         self.env_name = params['env']
-        self.pi0_net = pi0_net
 
         # normally taken from the env, but since we're adjusting
         # environments after construction, it's easier to hard-code for now

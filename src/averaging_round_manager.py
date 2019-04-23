@@ -32,15 +32,8 @@ class AveragingRoundManager:
             RoundClass = DQNRound
 
         self.nodes = [ RoundClass(param) for param in node_params ]
-
-        # for distral:
-        self.pi0_net = PolicyNetworkGridworld(self.nodes[0].input_size, self.nodes[0].num_actions)
-        self.pi0_net_optimizer = optim.Adam(self.pi0_net.parameters(), lr=0.001)
-        for node in self.nodes:
-            node.pi0_net = self.pi0_net
-
-
         self.num_nodes = len(self.nodes)
+
         self.experiment = experiment_params['experiment']
 
         self.num_rounds = experiment_params['num_rounds']
@@ -49,6 +42,16 @@ class AveragingRoundManager:
         self.fame_regularize = experiment_params['fame_regularize']
         self.device = experiment_params['device']
         self.distral = experiment_params['distral']
+
+
+        if self.distral:
+            self.pi0_net = PolicyNetworkGridworld(self.nodes[0].input_size, self.nodes[0].num_actions)
+            self.pi0_net_optimizer = optim.Adam(self.pi0_net.parameters(), lr=0.001)
+            for node in self.nodes:
+                node.pi0_net = self.pi0_net
+
+
+
         if self.distral and self.fame_regularize:
             raise("Only distral or FAME can be enabled for one experiment")
         self.alpha = experiment_params['alpha']
@@ -128,7 +131,7 @@ class AveragingRoundManager:
                 # avereage performance:
                 trailing_avg[id].append(np.mean(result['rewards']))
                 for (step, eps_reward) in result['episode_rewards']:
-                    self.experiment.log_metric(f'reward.{id}', eps_reward, step=step)
+                    self.experiment.log_metric(f'reward.{id}', eps_reward, step=step + idx)
 
 
                 self.experiment.log_metric(f'round_avg.{id}', np.mean(result['rewards']), step=result['total_frames'])
