@@ -25,14 +25,14 @@ class PositionContinuous_MountainCar(gym.Env):
         'video.frames_per_second': 30
     }
 
-    def __init__(self, power=0.0015):
+    def __init__(self, env_param=0.0015):
         self.min_action = -1.0
         self.max_action = 1.0
         self.min_position = -1.2
         self.max_position = 0.6
         self.max_speed = 0.07
         self.goal_position = 0.45 # was 0.5 in gym, 0.45 in Arnaud de Broissia's version
-        self.power = power
+        self.power = env_param
 
         self.low_state = np.array([self.min_position, -self.max_speed])
         self.high_state = np.array([self.max_position, self.max_speed])

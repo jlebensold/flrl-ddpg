@@ -36,6 +36,8 @@ envs = {
     }
 }
 
+ACTION_DIM = 1
+HIDDEN_DIM = 256
 class DDPGRound():
 
     @classmethod
@@ -49,10 +51,14 @@ class DDPGRound():
                 on_episode_done=None,
                 id="ID"
                 )
+    @classmethod
+    def build_policy_network(cls, env_name):
+        state_dim = envs[env_name]['state_dim']
+        return PolicyNetwork(state_dim, ACTION_DIM, HIDDEN_DIM)
 
-    def __init__(self, params):
+    def __init__(self, params, pi0_net):
         params = dict(params)
-        self.g = params['g']
+        self.env_param = params['env_param']
         self.device = params['device']
         self.max_frames  = params['max_frames']
         self.on_episode_done = params['on_episode_done']
@@ -60,6 +66,7 @@ class DDPGRound():
         self.total_frames = 0
         self.seed = params['seed']
         self.env_name = params['env']
+        self.pi0_net = pi0_net
 
         # normally taken from the env, but since we're adjusting
         # environments after construction, it's easier to hard-code for now
@@ -67,14 +74,11 @@ class DDPGRound():
         self.batch_size  = envs[self.env_name]['batch_size']
 
         state_dim = envs[self.env_name]['state_dim']
-        action_dim = 1
-        hidden_dim = 256
+        self.value_net  = ValueNetwork(state_dim, ACTION_DIM, HIDDEN_DIM).to(self.device)
+        self.policy_net = PolicyNetwork(state_dim, ACTION_DIM, HIDDEN_DIM).to(self.device)
 
-        self.value_net  = ValueNetwork(state_dim, action_dim, hidden_dim).to(self.device)
-        self.policy_net = PolicyNetwork(state_dim, action_dim, hidden_dim).to(self.device)
-
-        self.target_value_net  = ValueNetwork(state_dim, action_dim, hidden_dim).to(self.device)
-        self.target_policy_net = PolicyNetwork(state_dim, action_dim, hidden_dim).to(self.device)
+        self.target_value_net  = ValueNetwork(state_dim, ACTION_DIM, HIDDEN_DIM).to(self.device)
+        self.target_policy_net = PolicyNetwork(state_dim, ACTION_DIM, HIDDEN_DIM).to(self.device)
 
         for target_param, param in zip(self.target_value_net.parameters(), self.value_net.parameters()):
             target_param.data.copy_(param.data)
@@ -96,7 +100,7 @@ class DDPGRound():
 
 
     def env_factory(self):
-        return envs[self.env_name]['env'](self.g)
+        return envs[self.env_name]['env'](self.env_param)
 
     def setup(self):
         env_name = f'{self.env_name}-{self.id}-v0'
@@ -168,7 +172,6 @@ class DDPGRound():
         self.setup()
         rewards = []
         frame_idx= 0
-        self.env.g = self.g
         while frame_idx < self.max_frames:
             state = self.env.reset()
             self.ou_noise.reset()
