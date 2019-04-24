@@ -12,7 +12,7 @@ class GravityPendulum(gym.Env):
         'video.frames_per_second' : 30
     }
 
-    def __init__(self, g=10.):
+    def __init__(self, env_param=10.):
         self.max_speed=8
         self.max_torque=2.
         self.dt=.05
@@ -22,7 +22,7 @@ class GravityPendulum(gym.Env):
         self.action_space = spaces.Box(low=-self.max_torque, high=self.max_torque, shape=(1,), dtype=np.float32)
         self.observation_space = spaces.Box(low=-high, high=high, dtype=np.float32)
 
-        self.g = g
+        self.g = env_param
         self.seed()
 
     def seed(self, seed=None):

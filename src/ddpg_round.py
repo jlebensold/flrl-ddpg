@@ -13,50 +13,71 @@ from .ou_noise import OUNoise
 from .networks import PolicyNetwork, ValueNetwork
 from .normalized_actions import NormalizedActions
 from .gravity_pendulum import GravityPendulum
+from .force_mountain_car_continuous import PositionContinuous_MountainCar
 
+envs = {
+    'MountainCarContinuous' : {
+        'env': PositionContinuous_MountainCar,
+        'state_dim': 2,
+        'max_steps': 300,
+        'value_lr': 1e-3,
+        'policy_lr': 1e-4,
+        'tau': 1.,
+        'batch_size':64,
+    },
+    'GravityPendulum' : {
+        'env': GravityPendulum,
+        'state_dim': 3,
+        'max_steps': 200,
+        'value_lr': 1e-3,
+        'policy_lr': 1e-4,
+        'tau': 1e-2,
+        'batch_size':128,
+    }
+}
 
+ACTION_DIM = 1
+HIDDEN_DIM = 256
 class DDPGRound():
 
     @classmethod
     def defaults(cls):
 
-        def env_factory():
-            return GravityPendulum()
         return dict(
                 seed=1,
-#                device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                 device=torch.device("cpu"),
-                max_frames=12000,
-                max_steps=200,
-                batch_size=128,
-                on_round_done=None,
+                num_episodes=1,
+                max_frames=200,
+                algo='DDPG',
                 id="ID"
                 )
+    @classmethod
+    def build_policy_network(cls, env_name):
+        state_dim = envs[env_name]['state_dim']
+        return PolicyNetwork(state_dim, ACTION_DIM, HIDDEN_DIM)
 
     def __init__(self, params):
         params = dict(params)
-        self.g = params['g']
+        self.env_param = params['env_param']
         self.device = params['device']
         self.max_frames  = params['max_frames']
-        self.max_steps   = params['max_steps']
-        self.batch_size  = params['batch_size']
-        self.on_round_done = params['on_round_done']
+        self.num_episodes = params['num_episodes']
         self.id = params['id']
         self.total_frames = 0
         self.seed = params['seed']
+        self.env_name = params['env']
 
         # normally taken from the env, but since we're adjusting
         # environments after construction, it's easier to hard-code for now
-        state_dim = 3
-        action_dim = 1
+        self.max_steps = envs[self.env_name]['max_steps']
+        self.batch_size  = envs[self.env_name]['batch_size']
 
-        hidden_dim = 256
+        state_dim = envs[self.env_name]['state_dim']
+        self.value_net  = ValueNetwork(state_dim, ACTION_DIM, HIDDEN_DIM).to(self.device)
+        self.policy_net = PolicyNetwork(state_dim, ACTION_DIM, HIDDEN_DIM).to(self.device)
 
-        self.value_net  = ValueNetwork(state_dim, action_dim, hidden_dim).to(self.device)
-        self.policy_net = PolicyNetwork(state_dim, action_dim, hidden_dim).to(self.device)
-
-        self.target_value_net  = ValueNetwork(state_dim, action_dim, hidden_dim).to(self.device)
-        self.target_policy_net = PolicyNetwork(state_dim, action_dim, hidden_dim).to(self.device)
+        self.target_value_net  = ValueNetwork(state_dim, ACTION_DIM, HIDDEN_DIM).to(self.device)
+        self.target_policy_net = PolicyNetwork(state_dim, ACTION_DIM, HIDDEN_DIM).to(self.device)
 
         for target_param, param in zip(self.target_value_net.parameters(), self.value_net.parameters()):
             target_param.data.copy_(param.data)
@@ -64,8 +85,9 @@ class DDPGRound():
         for target_param, param in zip(self.target_policy_net.parameters(), self.policy_net.parameters()):
             target_param.data.copy_(param.data)
 
-        value_lr  = 1e-3
-        policy_lr = 1e-4
+        value_lr  = envs[self.env_name]['value_lr']
+        policy_lr = envs[self.env_name]['policy_lr']
+
         self.value_optimizer  = optim.Adam(self.value_net.parameters(),  lr=value_lr)
         self.policy_optimizer = optim.Adam(self.policy_net.parameters(), lr=policy_lr)
 
@@ -77,10 +99,10 @@ class DDPGRound():
 
 
     def env_factory(self):
-        return GravityPendulum(self.g)
+        return envs[self.env_name]['env'](self.env_param)
 
     def setup(self):
-        env_name = f'GravityPendulum-{self.id}-v0'
+        env_name = f'{self.env_name}-{self.id}-v0'
         gym_register(id=env_name,entry_point=self.env_factory, max_episode_steps=200,)
         env = gym.make(env_name)
         self.env = NormalizedActions(env)
@@ -99,9 +121,8 @@ class DDPGRound():
     def ddpg_update(self, batch_size,
             gamma = 0.99,
             min_value=-np.inf,
-            max_value=np.inf,
-            soft_tau=1e-2):
-
+            max_value=np.inf):
+        soft_tau = envs[self.env_name]['tau']
         state, action, reward, next_state, done = self.replay_buffer.sample(batch_size)
 
         state      = torch.FloatTensor(state).to(self.device)
@@ -150,8 +171,9 @@ class DDPGRound():
         self.setup()
         rewards = []
         frame_idx= 0
-        self.env.g = self.g
-        while frame_idx < self.max_frames:
+        cur_episode = 0
+        for i_episode in range(self.num_episodes):
+            cur_episode += 1
             state = self.env.reset()
             self.ou_noise.reset()
             episode_reward = 0
@@ -160,7 +182,6 @@ class DDPGRound():
                 action = self.get_action(state)
                 action = self.ou_noise.get_action(action, step)
                 next_state, reward, done, _ = self.env.step(action)
-
                 self.replay_buffer.push(state, action, reward, next_state, done)
                 if len(self.replay_buffer) > self.batch_size:
                     self.ddpg_update(self.batch_size)
@@ -171,12 +192,7 @@ class DDPGRound():
                 self.total_frames += 1
 
                 if done:
-                    print(f'[{self.id}.{self.total_frames}] Episode reward {episode_reward}')
-                    if self.on_round_done is not None:
-                        self.on_round_done(self.id, self.total_frames, episode_reward)
+                    print(f'[{self.id}] - Episode {i_episode}: {episode_reward}')
                     break
-
-
             rewards.append(episode_reward)
-
         return rewards, self.total_frames

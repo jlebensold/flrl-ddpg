@@ -5,6 +5,9 @@ class ReplayBuffer:
         self.capacity = capacity
         self.buffer = []
         self.position = 0
+        # used for a common API
+        self.policy_buffer = []
+        self.policy_position = 0
 
     def push(self, state, action, reward, next_state, done):
         if len(self.buffer) < self.capacity:
