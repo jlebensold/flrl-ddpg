@@ -62,27 +62,42 @@ class AveragingRoundManager:
         policy_params = dict()
         for name, param in self.nodes[0].policy_net.named_parameters():
             policy_params[name] = torch.zeros_like(param).cpu()
-
         return policy_params
+
+    def init_value_params(self):
+        params = dict()
+        for name, param in self.nodes[0].value_net.named_parameters():
+            params[name] = torch.zeros_like(param).cpu()
+        return params
+
 
     def add_node_weights_to_network_params(self, node, policy_params):
         for name, tensor in node.policy_net.named_parameters():
             policy_params[name] += tensor.cpu()
-
         return policy_params
 
+    def add_node_value_weights_to_network_params(self, node, value_params):
+        for name, tensor in node.value_net.named_parameters():
+            value_params[name] += tensor.cpu()
+        return value_params
 
     def average_node_network_weights(self):
         policy_params = self.init_policy_params()
-
+        value_params = self.init_value_params()
         for node in self.nodes:
             policy_params = self.add_node_weights_to_network_params(node, policy_params)
+
+        for node in self.nodes:
+            value_params = self.add_node_value_weights_to_network_params(node, value_params)
 
         # average:
         for name, param in policy_params.items():
             policy_params[name] /= self.num_nodes
 
-        return policy_params
+        for name, param in value_params.items():
+            value_params[name] /= self.num_nodes
+
+        return policy_params, value_params
 
     def run_rounds(self):
 
@@ -118,12 +133,12 @@ class AveragingRoundManager:
                 trailing_avg[id].append(np.mean(result['episode_rewards']))
                 for step, eps_reward in enumerate(result['episode_rewards']):
                     print('logging to comet')
-                    time.sleep(.01)
+                    time.sleep(.02)
                     self.experiment.log_metric(f'reward.{id}', eps_reward, step=step + idx)
 
 
                 self.experiment.log_metric(f'round_avg.{id}', np.mean(result['episode_rewards']), step=idx)
-                self.experiment.log_metric(f'trailing_avg_5.{id}',np.mean(trailing_avg[id][:-20]),step=idx)
+                self.experiment.log_metric(f'trailing_avg_20.{id}',np.mean(trailing_avg[id][:-20]),step=idx)
 
             # copy back node replay memory
             for result in results:
@@ -152,12 +167,12 @@ class AveragingRoundManager:
 
     def perform_federated_averaging(self):
         # 1. Average policy params across all nodes
-        averaged_policy_params = self.average_node_network_weights()
+        averaged_policy_params, averaged_value_params = self.average_node_network_weights()
 
         # 1.1 update the pi0 network on all nodes:
         for node in self.nodes:
             node.policy_net.load_state_dict(averaged_policy_params, strict=False)
-
+            node.value_net.load_state_dict(averaged_value_params, strict=False)
 
     def perform_distral_distillation(self):
         loss = 0
@@ -184,7 +199,6 @@ class AveragingRoundManager:
 
         for param in self.pi0_net.parameters():
             param.grad.data.clamp_(-500, 500)
-            # print("policy:", param.grad.data)
         self.pi0_net_optimizer.step()
 
         # 2. now update each nodes' pi0 network:
