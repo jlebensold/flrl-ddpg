@@ -1,6 +1,6 @@
 import gym
 import numpy as np
-
+import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -58,17 +58,6 @@ class AveragingRoundManager:
         self.beta = experiment_params['beta']
         os.makedirs(self.experiment_path, exist_ok=True)
 
-    def params_from_node(self, node):
-        policy_params = dict()
-#        value_params = dict()
-#        for name, tensor in node.value_net.named_parameters():
-#            value_params[name] = tensor
-
-        for name, tensor in node.policy_net.named_parameters():
-            policy_params[name] = tensor
-
-        return policy_params
-
     def init_policy_params(self):
         policy_params = dict()
         for name, param in self.nodes[0].policy_net.named_parameters():
@@ -97,7 +86,6 @@ class AveragingRoundManager:
 
     def run_rounds(self):
 
-
         trailing_avg = {}
         for node in self.nodes:
             trailing_avg[node.id] = (np.zeros(5) - 1500).tolist() # prime the list for averaging
@@ -113,8 +101,6 @@ class AveragingRoundManager:
             else:
                 results = [job(node) for node in self.nodes]
             round_reward = []
-            avg_reward = [np.mean(r['rewards']) for r in results]
-            print(f"Episode Rewards avg: {avg_reward} | {np.mean(avg_reward)}")
             for result in results:
                 node_idx = next(idx for idx, node in enumerate(self.nodes) if node.id == result['id'])
                 id = result['id']
@@ -126,16 +112,18 @@ class AveragingRoundManager:
                 self.nodes[node_idx].policy_net.load_state_dict(result['policy_net'])
                 self.nodes[node_idx].total_frames = result['total_frames']
 
-                round_reward.append(result['rewards'])
+                round_reward.append(np.sum(result['episode_rewards']))
                 # Take the last reward from the round and assume this is
                 # avereage performance:
-                trailing_avg[id].append(np.mean(result['rewards']))
-                for (step, eps_reward) in result['episode_rewards']:
+                trailing_avg[id].append(np.mean(result['episode_rewards']))
+                for step, eps_reward in enumerate(result['episode_rewards']):
+                    print('logging to comet')
+                    time.sleep(.01)
                     self.experiment.log_metric(f'reward.{id}', eps_reward, step=step + idx)
 
 
-                self.experiment.log_metric(f'round_avg.{id}', np.mean(result['rewards']), step=result['total_frames'])
-                self.experiment.log_metric(f'trailing_avg_5.{id}', np.mean(trailing_avg[id][-5]),step=result['total_frames'])
+                self.experiment.log_metric(f'round_avg.{id}', np.mean(result['episode_rewards']), step=idx)
+                self.experiment.log_metric(f'trailing_avg_5.{id}',np.mean(trailing_avg[id][:-20]),step=idx)
 
             # copy back node replay memory
             for result in results:
@@ -157,7 +145,10 @@ class AveragingRoundManager:
             if (self.fame_regularize):
                 self.perform_federated_averaging()
         # Now save the distilled policy network:
-        self.save_model(self.pi0_net, self.experiment_path / 'policy_net.mdl')
+        if self.distral:
+            self.save_model(self.pi0_net, self.experiment_path / 'policy.pi0.mdl')
+
+        self.save_model(self.nodes[0].policy_net, self.experiment_path / 'policy.n0.mdl')
 
     def perform_federated_averaging(self):
         # 1. Average policy params across all nodes
@@ -176,6 +167,9 @@ class AveragingRoundManager:
         for node in self.nodes:
             size_to_sample = np.minimum(node.batch_size, len(node.replay_buffer.buffer))
             transitions = node.replay_buffer.policy_sample(size_to_sample)
+            transitions = [[torch.tensor(t) for t in sample] for sample in transitions]
+
+
             batch = TransitionDistral(*zip(*transitions))
 
             state_batch = torch.cat(batch.state).to(self.device).detach()
@@ -202,18 +196,12 @@ class AveragingRoundManager:
         self.experiment.log_asset(path, overwrite=True)
 
 def job(node_round):
-    episode_rewards = list()
-    def on_episode_done(id, step, reward):
-        episode_rewards.append((step,reward))
-
-    node_round.on_episode_done = on_episode_done
-    rewards, total_frames = node_round.run()
+    episode_rewards, total_frames = node_round.run()
     value_net = None
     if node_round.value_net is not None:
         value_net = node_round.value_net.state_dict()
     return {
             'id': node_round.id,
-            'rewards': rewards,
             'episode_rewards': episode_rewards,
             'total_frames': total_frames,
             'value_net': value_net,

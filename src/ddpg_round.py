@@ -46,9 +46,9 @@ class DDPGRound():
         return dict(
                 seed=1,
                 device=torch.device("cpu"),
-                max_frames=12000,
+                num_episodes=1,
+                max_frames=200,
                 algo='DDPG',
-                on_episode_done=None,
                 id="ID"
                 )
     @classmethod
@@ -61,7 +61,7 @@ class DDPGRound():
         self.env_param = params['env_param']
         self.device = params['device']
         self.max_frames  = params['max_frames']
-        self.on_episode_done = params['on_episode_done']
+        self.num_episodes = params['num_episodes']
         self.id = params['id']
         self.total_frames = 0
         self.seed = params['seed']
@@ -171,7 +171,9 @@ class DDPGRound():
         self.setup()
         rewards = []
         frame_idx= 0
-        while frame_idx < self.max_frames:
+        cur_episode = 0
+        for i_episode in range(self.num_episodes):
+            cur_episode += 1
             state = self.env.reset()
             self.ou_noise.reset()
             episode_reward = 0
@@ -180,21 +182,17 @@ class DDPGRound():
                 action = self.get_action(state)
                 action = self.ou_noise.get_action(action, step)
                 next_state, reward, done, _ = self.env.step(action)
-
                 self.replay_buffer.push(state, action, reward, next_state, done)
                 if len(self.replay_buffer) > self.batch_size:
                     self.ddpg_update(self.batch_size)
 
                 state = next_state
                 episode_reward += reward
-                rewards.append(reward)
                 frame_idx += 1
                 self.total_frames += 1
 
                 if done:
-                    print(f'[{self.id}.{self.total_frames}] Episode reward {episode_reward}')
+                    print(f'[{self.id}] - Episode {i_episode}: {episode_reward}')
                     break
-            if self.on_episode_done is not None:
-                self.on_episode_done(self.id, self.total_frames, episode_reward)
-
+            rewards.append(episode_reward)
         return rewards, self.total_frames

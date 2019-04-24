@@ -38,7 +38,7 @@ envs = {
     'GridworldEnv' : {
         'env': GridworldEnv,
         'state_dim': 2,
-        'max_steps': 300,
+        'max_steps': 1000,
         'batch_size':128,
         'num_actions': 5
     },
@@ -59,7 +59,6 @@ class DQNRound():
         return dict(
                 seed=1,
                 device="cpu",
-                max_episodes=12000,
                 algo='DQN',
                 on_episode_done=None,
                 id="ID"
@@ -72,12 +71,12 @@ class DQNRound():
         params = dict(params)
         self.env_param = params['env_param']
         self.device = torch.device(params['device'])
-        self.num_episodes = params['max_episodes']
+        self.num_episodes = params['num_episodes']
         self.on_episode_done = params['on_episode_done']
         self.id = params['id']
         self.total_frames = 0
         self.seed = params['seed']
-        self.env_name = params['env']
+        self.env_name = params['env_name']
         self.distral = params['distral']
         self.pi0_net = None
         self.alpha = params['alpha']
@@ -92,13 +91,12 @@ class DQNRound():
         self.batch_size  = envs[self.env_name]['batch_size']
         state_dim = envs[self.env_name]['state_dim']
         self.num_actions = envs[self.env_name]['num_actions']
+        self.max_steps = envs[self.env_name]['max_steps']
         #self.env = gym.make('CartPole-v1').unwrapped
 
         # Get screen size so that we can initialize layers correctly based on shape
         # returned from AI gym. Typical dimensions at this point are close to 3x40x90
         # which is the result of a clamped and down-scaled render buffer in get_screen()
-        self.cur_run = 0
-
         policy_buffer_size = 0
         if self.distral:
             policy_buffer_size = 1000
@@ -265,6 +263,7 @@ class DQNRound():
         if len(self.replay_buffer) < self.batch_size:
             return
         transitions = self.replay_buffer.sample(self.batch_size)
+        transitions = [[torch.tensor(t) for t in sample] for sample in transitions]
         # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
         # detailed explanation). This converts batch-array of Transitions
         # to Transition of batch-arrays.
@@ -295,7 +294,7 @@ class DQNRound():
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
         # Compute Huber loss
-        loss = F.mse_loss(state_action_values, expected_state_action_values)
+        loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
 
         # Optimize the model
         self.optimizer.zero_grad()
@@ -309,6 +308,7 @@ class DQNRound():
         if len(self.replay_buffer) < self.batch_size:
             return
         transitions = self.replay_buffer.sample(self.batch_size)
+        transitions = [[torch.tensor(t) for t in sample] for sample in transitions]
         # Transpose the batch (see http://stackoverflow.com/a/19343/3343043 for
         # detailed explanation).
         batch = TransitionDistral(*zip(*transitions))
@@ -357,11 +357,11 @@ class DQNRound():
     def run(self):
         #self.optimizer = optim.RMSprop(self.policy_net.parameters())
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=0.001)
-        self.cur_run += 1
         self.env.reset()
         self.episode_rewards = []
         self.current_time = 0
-        self.pi0_net = self.pi0_net.to(self.device)
+        if self.distral:
+            self.pi0_net = self.pi0_net.to(self.device)
         for i_episode in range(self.num_episodes):
             # Initialize the environment and state
             if self.env_name == 'GridworldEnv':
@@ -372,7 +372,8 @@ class DQNRound():
                 current_screen = self.get_screen()
                 state = current_screen - last_screen
             rewards = []
-            for t in count():
+
+            for step in range(self.max_steps):
                 # Select and perform an action
                 if self.distral:
                     action = self.distral_select_action(state)
@@ -388,6 +389,7 @@ class DQNRound():
                     next_state = torch.tensor( next_state_tmp, dtype=torch.float).view(-1,self.input_size).to(self.device)
                     if done:
                         next_state = None
+                        break
 
                 else:
                     _, reward, done, _ = self.env.step(action.item())
@@ -401,6 +403,7 @@ class DQNRound():
                         next_state = current_screen - last_screen
                     else:
                         next_state = None
+                        break
 
 
                 reward = torch.tensor([reward], device=self.device)
@@ -410,9 +413,11 @@ class DQNRound():
                     # Store the transition in memory
                     time = torch.tensor([self.current_time])
                     # Store the transition in replay_buffer
-                    self.replay_buffer.push(state, action, next_state, reward, time)
+                    self.replay_buffer.push(state.numpy(), action.numpy(),
+                            next_state.numpy(), reward.numpy(), time.numpy())
                 else:
-                    self.replay_buffer.push(state, action, next_state, reward)
+                    self.replay_buffer.push(state.numpy(), action.numpy(),
+                            next_state.numpy(), reward.numpy())
 
 
                 # Move to the next state
@@ -429,20 +434,12 @@ class DQNRound():
                     break
 
             self.episode_rewards.append(np.sum(rewards))
-            if self.on_episode_done is not None:
-                self.on_episode_done(self.id, self.total_frames, np.sum(rewards))
-
-            self.episode_rewards.append(np.sum(rewards))
-            print(f'[{self.id}-{self.cur_run}] - Episode {i_episode}: {np.sum(rewards)}, {np.mean(self.episode_rewards[-TRAIL_AVG:])}')
-
+            print(f'[{self.id}] - Episode {i_episode}: {np.sum(rewards)}, {np.mean(self.episode_rewards[-TRAIL_AVG:])}')
 
 
             # Update the target network, copying all weights and biases in DQN
             if i_episode % TARGET_UPDATE == 0:
                 self.target_net.load_state_dict(self.policy_net.state_dict())
-
-#        print(f'[{self.id}-{self.cur_run}] - {np.mean(self.episode_rewards)}')
-#        self.env.render()
 
         return self.episode_rewards, self.total_frames
 

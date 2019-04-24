@@ -13,11 +13,15 @@ class ReplayMemory(object):
         self.policy_buffer = []
         self.policy_position = 0
 
-    def push(self, *args):
+    def push(self, state, action, next_state, reward, time=None):
         """Saves a transition."""
         if len(self.buffer) < self.capacity:
             self.buffer.append(None)
-        self.buffer[self.position] = self.transition(*args)
+        #self.buffer[self.position] = self.transition(*args)
+        if time is None:
+            self.buffer[self.position] = (state, action, next_state, reward)
+        else:
+            self.buffer[self.position] = (state, action, next_state, reward, time)
         self.position = (self.position + 1) % self.capacity
 
         if self.policy_capacity == 0:
@@ -25,7 +29,11 @@ class ReplayMemory(object):
 
         if len(self.policy_buffer) < self.policy_capacity:
             self.policy_buffer.append(None)
-        self.policy_buffer[self.policy_position] = TransitionDistral(*args)
+        #self.policy_buffer[self.policy_position] = TransitionDistral(*args)
+        if time is None:
+            self.policy_buffer[self.policy_position] = (state, action, next_state, reward)
+        else:
+            self.policy_buffer[self.policy_position] = (state, action, next_state, reward, time)
         self.policy_position = (self.policy_position + 1) % self.policy_capacity
 
 

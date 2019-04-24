@@ -5,23 +5,35 @@ from src.averaging_round_manager import AveragingRoundManager
 from src.comet_logger import CometLogger
 from src.settings import EXPERIMENTS_PATH
 
-def run(max_frames=500, num_rounds=10, seed=3, env_params=(8.,9.,10.,11.,12.,),
-        env_name='GravityPendulum', fame_reg=True):
+def run(num_episodes=1,
+        num_rounds=1,
+        seed=1,
+        mp=True,
+        env_params=(8.,9.,10.,11.,12.,),
+        env_name='GravityPendulum',
+        fame_reg=True):
+
     distral=False
     params = DDPGRound.defaults()
-    params['algo'] = 'DDPG'
     params['env'] = env_name
     params['seed'] = seed
-    params['max_frames'] = max_frames
+    params['num_episodes'] = num_episodes
     params['env_params'] = env_params
-    params['project'] = 'ddpg-fl-averaging'
+    params['project'] = f'DDPG-{env_name}'
     params['distral'] = distral
     params['device'] = 'cpu'
     params['fame_regularize'] = fame_reg
 
-    node_params = [ChainMap({'id':f'n{idx}', 'env_param': g }, params) for idx,g in enumerate(env_params) ]
+
+    if fame_reg:
+        tag = 'fame'
+    else:
+        tag = 'baseline'
+
 
     experiment = CometLogger(project=params['project']).experiment()
+    experiment.add_tag(tag)
+    node_params = [ChainMap({'id':f'n{idx}', 'experiment': experiment,  'env_param': ep }, params) for idx, ep in enumerate(env_params) ]
     experiment_params = {
         'experiment': experiment,
         'num_rounds': num_rounds,
@@ -32,7 +44,7 @@ def run(max_frames=500, num_rounds=10, seed=3, env_params=(8.,9.,10.,11.,12.,),
         'device': torch.device(params['device']),
         'distral': distral,
         'experiment_path': EXPERIMENTS_PATH / experiment.id,
-        'multiprocess': True,
+        'multiprocess': mp,
         'alpha': 0,
         'beta': 0,
     }
