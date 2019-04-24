@@ -66,6 +66,9 @@ class AveragingRoundManager:
 
     def init_value_params(self):
         params = dict()
+        if self.nodes[0].value_net is None:
+            return params
+
         for name, param in self.nodes[0].value_net.named_parameters():
             params[name] = torch.zeros_like(param).cpu()
         return params
@@ -83,16 +86,20 @@ class AveragingRoundManager:
 
     def average_node_network_weights(self):
         policy_params = self.init_policy_params()
-        value_params = self.init_value_params()
         for node in self.nodes:
             policy_params = self.add_node_weights_to_network_params(node, policy_params)
-
-        for node in self.nodes:
-            value_params = self.add_node_value_weights_to_network_params(node, value_params)
 
         # average:
         for name, param in policy_params.items():
             policy_params[name] /= self.num_nodes
+
+
+        value_params = self.init_value_params()
+        if self.nodes[0].value_net is None:
+            return policy_params, value_params
+
+        for node in self.nodes:
+            value_params = self.add_node_value_weights_to_network_params(node, value_params)
 
         for name, param in value_params.items():
             value_params[name] /= self.num_nodes
@@ -172,7 +179,8 @@ class AveragingRoundManager:
         # 1.1 update the pi0 network on all nodes:
         for node in self.nodes:
             node.policy_net.load_state_dict(averaged_policy_params, strict=False)
-            node.value_net.load_state_dict(averaged_value_params, strict=False)
+            if node.value_net is not None:
+                node.value_net.load_state_dict(averaged_value_params, strict=False)
 
     def perform_distral_distillation(self):
         loss = 0
