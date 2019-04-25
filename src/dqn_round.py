@@ -434,7 +434,7 @@ class DQNRound():
                     break
 
             self.episode_rewards.append(np.sum(rewards))
-            print(f'[{self.id}] - Episode {i_episode}: {np.sum(rewards)}, {np.mean(self.episode_rewards[-TRAIL_AVG:])}')
+            print(f'[{self.id}] - Episode {i_episode}: {np.sum(rewards)}')
 
 
             # Update the target network, copying all weights and biases in DQN

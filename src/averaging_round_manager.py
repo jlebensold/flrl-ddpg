@@ -122,7 +122,7 @@ class AveragingRoundManager:
                 results =  pool.starmap(job, [(node,) for node in self.nodes])
             else:
                 results = [job(node) for node in self.nodes]
-            round_reward = []
+
             for result in results:
                 node_idx = next(idx for idx, node in enumerate(self.nodes) if node.id == result['id'])
                 id = result['id']
@@ -134,18 +134,19 @@ class AveragingRoundManager:
                 self.nodes[node_idx].policy_net.load_state_dict(result['policy_net'])
                 self.nodes[node_idx].total_frames = result['total_frames']
 
-                round_reward.append(np.sum(result['episode_rewards']))
                 # Take the last reward from the round and assume this is
                 # avereage performance:
                 trailing_avg[id].append(np.mean(result['episode_rewards']))
-                for step, eps_reward in enumerate(result['episode_rewards']):
-                    print('logging to comet')
-                    time.sleep(.02)
-                    self.experiment.log_metric(f'reward.{id}', eps_reward, step=step + idx)
-
-
+                time.sleep(.05)
                 self.experiment.log_metric(f'round_avg.{id}', np.mean(result['episode_rewards']), step=idx)
+                time.sleep(.01)
                 self.experiment.log_metric(f'trailing_avg_20.{id}',np.mean(trailing_avg[id][:-20]),step=idx)
+
+                for step, eps_reward in enumerate(result['episode_rewards']):
+                    reward_step = step + idx * self.nodes[node_idx].num_episodes
+                    print(f'logging to comet - {reward_step} - {eps_reward}')
+                    time.sleep(.05)
+                    self.experiment.log_metric(f'episode_reward.{id}', eps_reward, step=reward_step)
 
             # copy back node replay memory
             for result in results:
@@ -154,12 +155,6 @@ class AveragingRoundManager:
                 self.nodes[node_idx].replay_buffer.position = result['replay_buffer_position']
                 self.nodes[node_idx].replay_buffer.policy_buffer = result['replay_buffer_policy_buffer']
                 self.nodes[node_idx].replay_buffer.policy_position = result['replay_buffer_policy_position']
-
-            # log round averaged reward for each episode in round across all
-            # nodes:
-            avg_round_reward = np.mean([np.mean(r) for r in round_reward])
-            self.experiment.log_metric(f'round_reward_avg', avg_round_reward, step=round_num)
-
 
             if (self.distral):
                 self.perform_distral_distillation()
