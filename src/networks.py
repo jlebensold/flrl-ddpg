@@ -48,9 +48,9 @@ class PolicyNetwork(nn.Module):
         x = torch.tanh(self.linear3(x))
         return x
 
-    def get_action(self, state):
-        state  = torch.FloatTensor(state).unsqueeze(0).to(self.device)
-        action = self.forward(state)
-        return action.detach().cpu().numpy()[0, 0]
-
+#    def get_action(self, state):
+#        state  = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+#        action = self.forward(state)
+#        return action.detach().cpu().numpy()[0, 0]
+#
 
