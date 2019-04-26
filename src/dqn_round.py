@@ -100,9 +100,9 @@ class DQNRound():
         policy_buffer_size = 0
         if self.distral:
             policy_buffer_size = 1000
-            self.replay_buffer = ReplayMemory(TransitionDistral, 10_000, policy_buffer_size)
+            self.replay_buffer = ReplayMemory(10_000, policy_buffer_size)
         else:
-            self.replay_buffer = ReplayMemory(Transition, 10_000, policy_buffer_size)
+            self.replay_buffer = ReplayMemory(10_000, policy_buffer_size)
         self.steps_done = 0
         self.episode_durations = []
         self.episode_rewards = []
