@@ -1,7 +1,7 @@
 import torch
 from collections import ChainMap
 from src.ddpg_round import DDPGRound
-from src.averaging_round_manager import AveragingRoundManager
+from src.round_manager import RoundManager
 from src.comet_logger import CometLogger
 from src.settings import EXPERIMENTS_PATH
 
@@ -51,5 +51,5 @@ def run(num_episodes=1,
     experiment.log_parameters(params)
     experiment.log_parameters(experiment_params)
 
-    round_manager = AveragingRoundManager(node_params, experiment_params)
+    round_manager = RoundManager(node_params, experiment_params)
     round_manager.run_rounds()

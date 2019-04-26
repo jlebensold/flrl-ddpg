@@ -12,8 +12,8 @@ from .replay_buffer import ReplayBuffer
 from .ou_noise import OUNoise
 from .networks import PolicyNetwork, ValueNetwork
 from .normalized_actions import NormalizedActions
-from .gravity_pendulum import GravityPendulum
-from .force_mountain_car_continuous import PositionContinuous_MountainCar
+from .envs.gravity_pendulum import GravityPendulum
+from .envs.force_mountain_car_continuous import PositionContinuous_MountainCar
 
 envs = {
     'MountainCarContinuous' : {

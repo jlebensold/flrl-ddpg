@@ -4,7 +4,6 @@ import gym
 import numpy as np
 from collections import ChainMap
 from src.ddpg_round import DDPGRound
-from src.averaging_round_manager import AveragingRoundManager
 from src.comet_logger import CometLogger
 from src.settings import EXPERIMENTS_PATH
 

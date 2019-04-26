@@ -24,7 +24,7 @@ import multiprocessing
 from multiprocessing.pool import ThreadPool
 import threading
 
-class AveragingRoundManager:
+class RoundManager:
     def __init__(self, node_params=[], experiment_params={}):
         if experiment_params['algo'] == 'DDPG':
             RoundClass = DDPGRound

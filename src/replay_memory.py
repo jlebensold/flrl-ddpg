@@ -1,14 +1,10 @@
 import random
-from .dqn import Transition
-from .dqn import TransitionDistral
 class ReplayMemory(object):
-
-    def __init__(self, transition, capacity, policy_capacity=0):
+    """ Used by DQN (e.g. Distral) """
+    def __init__(self, capacity, policy_capacity=0):
         self.capacity = capacity
         self.buffer = []
         self.position = 0
-        self.transition = transition
-
         self.policy_capacity = policy_capacity
         self.policy_buffer = []
         self.policy_position = 0
@@ -17,7 +13,6 @@ class ReplayMemory(object):
         """Saves a transition."""
         if len(self.buffer) < self.capacity:
             self.buffer.append(None)
-        #self.buffer[self.position] = self.transition(*args)
         if time is None:
             self.buffer[self.position] = (state, action, next_state, reward)
         else:
@@ -29,7 +24,6 @@ class ReplayMemory(object):
 
         if len(self.policy_buffer) < self.policy_capacity:
             self.policy_buffer.append(None)
-        #self.policy_buffer[self.policy_position] = TransitionDistral(*args)
         if time is None:
             self.policy_buffer[self.policy_position] = (state, action, next_state, reward)
         else:

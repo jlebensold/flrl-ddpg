@@ -13,7 +13,7 @@ from torch.distributions import Categorical
 
 from .replay_memory import ReplayMemory
 from .dqn import DQN, DQNGridworld, Transition, TransitionDistral
-from .gravity_cartpole import GravityCartPole
+from .envs.gravity_cartpole import GravityCartPole
 from .envs.gridworld_env import GridworldEnv
 
 import io
