@@ -17,16 +17,8 @@ We explore the application of Reinforcement Learning (RL) in a new frameworkwe c
 - fire
 - PyTorch 1.x
 
-### Project Files
-
-Included in our submission is a `src` folder containing the python files,
-plotting functions and the algorithms for Q1.(a) and Q2.(a). See the files
-q1.py and q2.py for code we used to get our results and run our experiments
-
-### Results
-
-See pickle files in `./results/` for raw data used for plots generated from code in q1.py
-and q2.py.
+### License
+MIT
 
 ### Installation
 ```
